@@ -7,23 +7,26 @@ public:
 
 	Sensor *batteryVoltage = new Sensor();
 	Sensor *batteryCurrent = new Sensor();
+
 	//Sensor *tempSensor[5] = {new Sensor(),new Sensor(),new Sensor(),new Sensor(),new Sensor()};
 	Sensor *tempSensorMax = new Sensor();
 	Sensor *tempSensorAvg = new Sensor();
 	Sensor *tempSensorMin = new Sensor();
+
 	/*Sensor *batteryCell[16] = {
 		new Sensor(),new Sensor(),new Sensor(),new Sensor(),
 		new Sensor(),new Sensor(),new Sensor(),new Sensor(),
 		new Sensor(),new Sensor(),new Sensor(),new Sensor(),
 		new Sensor(),new Sensor(),new Sensor(),new Sensor()
 	};*/
+
 	Sensor *batteryCellMax = new Sensor();
 	Sensor *batteryCellMin = new Sensor();
 	Sensor *batteryCellAvg = new Sensor();
 	Sensor *batteryCapacity = new Sensor();
 
 	float cellVoltage[16];
-	//TODO flags
+	//TODO flags (balance, undervoltage, overvoltage)
 	float current;
 	int soc;
 	float capacity;
@@ -33,6 +36,8 @@ public:
 	float voltage;
 	float soh;
 	int reserved;
+
+	byte b_readed;
 
 	char crc(char *buf, byte len)
 	{
@@ -80,18 +85,18 @@ public:
 				ESP_LOGD("custom", "hear nothing, break");
 				break;
 			}
-			//usleep(1000); TODO
+			//usleep(1000); TODO?
 		}
 	}
 
 	int readblock()
 	{
-		byte readed = 0;
-		byte subcmd = readlog(); readed++;
+		b_readed = 0;
+		byte subcmd = readlog();
 		switch (subcmd)
 		{
 			case 0x01:{ //cell voltage
-				byte cellcount = readlog(); readed++;
+				byte cellcount = readlog();
 				if(cellcount>16){
 					ESP_LOGD("custom", "Cell count too high: %d", cellcount);
 					return 100;
@@ -106,7 +111,7 @@ public:
 				float cellavg = 0.0;
 
 				for(byte i=0; i<cellcount; i++){
-					byte val = readlog(); readed++;
+					byte val = readlog();
 					if(val & f_bal){
 						val &= (byte)(~f_bal);
 						//TODO set flag
@@ -121,7 +126,6 @@ public:
 					}
 
 					cellVoltage[i] = (val*256 + readlog())/1000.0; 
-					readed++;
 					ESP_LOGD("custom", "Cell %d  %f V", i, cellVoltage[i]);
 					//batteryCell[i]->publish_state(cellVoltage[i]);
 
@@ -135,43 +139,46 @@ public:
 				batteryCellAvg->publish_state(cellavg/cellcount);
 				break;
 			}
+
 			case 0x02:{ //current
-				byte shunts = readlog(); readed++;
+				byte shunts = readlog();
 				for(byte i=0; i<shunts; i++){
 					current = (30000 - (readlog()*256 + readlog())) / 100.0;
-					readed+=2;
 					ESP_LOGD("custom", "Current %d  %f A", i, current);
 					batteryCurrent->publish_state(current);
 				}
 				break;
 			}
+
 			case 0x03:{ //SOC (must be 0-100)
-				byte socs = readlog(); readed++;
+				byte socs = readlog();
 				for(byte i=0; i<socs; i++){
 					soc = ((readlog()*256 + readlog())) / 100;
-					readed+=2;
 					ESP_LOGD("custom", "SoC %d  %d %%", i, soc);
 				}
 				break;
 			}
+
 			case 0x04:{ //Capacity (1-600Ah, 0.01Ah unit)
-				byte caps = readlog(); readed++;
+				byte caps = readlog(); 
 				for(byte i=0; i<caps; i++){
 					capacity = ((readlog()*256 + readlog())) / 100.0;
-					readed+=2;
 					batteryCapacity->publish_state(capacity);
 					ESP_LOGD("custom", "Capacity %d  %f Ah", i, capacity);
 				}
 				break;
 			}
+
 			case 0x05:{ //Tempearature (offset -50V)
-				byte temps = readlog(); readed++;
+				byte temps = readlog();
 				float tempmax = 0.0, tempmin = 255.0, avgtemp = 0;
 				for(byte i=0; i<temps; i++){
 					temperature[i] = 50-(readlog()*256 + readlog())/10.0;
-					readed+=2;
 					ESP_LOGD("custom", "Temp %d  %f C", i, temperature[i]);
-					if(temperature[i] < 0 || temperature[i] > 40)continue;
+
+					//TODO: fix this stupid spike (hw problem?)
+					if(temperature[i] < 0 || temperature[i] > 40)continue; 
+
 					if(i < 4){
 						//TODO: temp4 remove flags?
 						//tempSensor[i]->publish_state(temperature[i]);
@@ -180,85 +187,83 @@ public:
 						avgtemp += temperature[i];
 					}
 				}
-				//128 129
-				//-78 -79
 
 				tempSensorMax->publish_state(tempmax);
 				tempSensorAvg->publish_state(avgtemp / (temps-1));
 				tempSensorMin->publish_state(tempmin);
 				break;
 			}
+
 			case 0x06:{ //Alarm
-				byte alarms = readlog(); readed++;
+				byte alarms = readlog();
 				for(byte i=0; i<alarms; i++){
 					alarm[i] = (readlog()*256 + readlog());
-					readed+=2;
 					ESP_LOGD("custom", "Alarm %d %d", i, alarm[i]);
 				}
 				break;
 			}
+
 			case 0x07:{ //Cycle count
-				byte cycles = readlog(); readed++;
+				byte cycles = readlog();
 				for(byte i=0; i<cycles; i++){
 					cyclesCount = (readlog()*256 + readlog());
-					readed+=2;
 					ESP_LOGD("custom", "Cycles %d %d", i, cyclesCount);
 				}
 				break;
 			}
+
 			case 0x08:{ //Battery voltage (10mV unit)
-				byte batts = readlog(); readed++;
+				byte batts = readlog();
 				for(byte i=0; i<batts; i++){
 					voltage = (readlog()*256 + readlog())/100.0;
-					readed+=2;
 					ESP_LOGD("custom", "Battery %d %f", i, voltage);
 					batteryVoltage->publish_state(voltage);
 				}
 				break;
 			}
+
 			case 0x09:{ //SOH (must be 0-100)
-				byte sohs = readlog(); readed++;
+				byte sohs = readlog();
 				for(byte i=0; i<sohs; i++){
 					soh = (readlog()*256 + readlog())/100.0;
-					readed+=2;
 					ESP_LOGD("custom", "SOH %d %f", i, soh);
 				}
 				break;
 			}
+
 			case 0x0A:{ //Reserved
-				byte reserv = readlog(); readed++;
+				byte reserv = readlog();
 				for(byte i=0; i<reserv; i++){
 					reserved = (readlog()*256 + readlog());
-					readed+=2;
 					ESP_LOGD("custom", "Reserved %d %d", i, reserved);
 				}
 				break;
 			}
+
 			case 0x20:{ //NOOP
 				ESP_LOGD("custom", "NOOP");
 				break;
 			}
+
 			case 0x0D:{ //EOF
 				ESP_LOGD("custom", "End of packet");
 				break;
 			}
-			default:{ //some shit happens
+
+			default:{ //some unexpected data received
 				ESP_LOGD("custom", "Dummy read (%d)", subcmd);
 				while(available()){
-					byte dummy = readlog(); readed++;
+					byte dummy = readlog();
 					if(dummy == 0x0D || dummy == 0xFF)break;
 				}
 			}
 		}
 
-		return readed;
+		return b_readed;
 	}
 
 	int recv()
 	{
-		//const int max_line_length = 80;
-		//static char buffer[max_line_length];
-
 		//header magic
 		byte magic = readlog();
 		if(magic != 0x7E){
@@ -294,6 +299,7 @@ public:
 	{
 		byte tmp = read();
 		//ESP_LOGD("custom", " %02x", tmp);
+		b_readed++;
 		return tmp;
 	}
 
@@ -304,6 +310,8 @@ public:
 
 			ESP_LOGD("custom", "loop()");
 			while(available())read();
+
+			//TODO: send init packet when bms stops sending data?
 			send(0x00, 0x01, NULL);
 			if(recv()){}
 		}
