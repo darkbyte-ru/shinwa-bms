@@ -8,16 +8,16 @@ ESP8266 module (esp12e board). RS485 driver bypassed by directly connecting to [
 
 # Software
 
-Esphome based node with custom module [shinwabms.h](shinwabms.h) and pretty simple config [shinwabms.yaml](shinwabms.yaml).
+[ESPHome](https://github.com/esphome/esphome) based node with custom module [shinwabms.h](shinwabms.h) and pretty simple config [shinwabms.yaml](shinwabms.yaml).
 
 ## Implemented features
 - Battery voltage
 - Per cell voltage 
-- Load current
+- Load/charge current
 - Temperature sensors (°C)
 - Battery capacity (Ah)
-- State of charge
-- State of health
+- State of charge (%)
+- State of health (%)
 - Cycle count
 
 ## Unimplemented features
